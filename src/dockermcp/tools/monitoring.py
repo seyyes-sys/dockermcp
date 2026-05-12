@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from dockermcp.auth import Role
 from dockermcp.config import get_settings
 from dockermcp.docker_client import get_client
-from dockermcp.models import HealthReportParams
+from dockermcp.models import Alert, HealthReportParams
 from dockermcp.tools._common import ok, to_thread, tool
 
 
@@ -73,21 +73,45 @@ def register(mcp: FastMCP) -> None:
 
     @tool(mcp, role=Role.VIEWER)
     async def health_report(params: HealthReportParams) -> dict[str, Any]:
-        """Rapport de santé synthétique : unhealthy, flapping, crashed, high CPU/mém."""
+        """Rapport de santé synthétique avec liste plate d'alertes typées.
+
+        Détecte : `unhealthy`, `flapping`, `crashed`, `oom`, `high_cpu`, `high_mem`.
+        Les seuils peuvent être surchargés par appel (`cpu_threshold`, etc.) ;
+        sinon les défauts viennent de `Settings`.
+
+        Le champ ``alerts`` est une liste plate prête à être itérée par un
+        orchestrateur (n8n, OpenClaw, …). Les listes catégorisées historiques
+        (`unhealthy`, `flapping`…) sont conservées pour rétro-compatibilité.
+        """
         settings = get_settings()
+        cpu_th = params.cpu_threshold if params.cpu_threshold is not None else settings.cpu_warn_pct
+        mem_th = params.mem_threshold if params.mem_threshold is not None else settings.mem_warn_pct
+        restart_th = (
+            params.restart_threshold
+            if params.restart_threshold is not None
+            else settings.restart_warn_count
+        )
+
         client = get_client()
         all_c = await to_thread(client.containers.list, all=params.include_stopped)
+        if params.name_filter:
+            needle = params.name_filter.lower()
+            all_c = [c for c in all_c if needle in (c.name or "").lower()]
+
         unhealthy: list[dict[str, Any]] = []
         flapping: list[dict[str, Any]] = []
         crashed: list[dict[str, Any]] = []
         high_cpu: list[dict[str, Any]] = []
         high_mem: list[dict[str, Any]] = []
+        alerts: list[Alert] = []
 
         for c in all_c:
             attrs = c.attrs
             state = attrs.get("State", {}) or {}
             health = (state.get("Health") or {}).get("Status")
             restart_count = attrs.get("RestartCount", 0)
+            exit_code = state.get("ExitCode")
+            oom_killed = bool(state.get("OOMKilled"))
             base = {
                 "name": c.name,
                 "id": c.short_id,
@@ -95,35 +119,119 @@ def register(mcp: FastMCP) -> None:
                 "restart_count": restart_count,
                 "health": health,
             }
+
             if health == "unhealthy":
                 unhealthy.append(base)
-            if c.status == "restarting" or restart_count >= settings.restart_warn_count:
+                alerts.append(
+                    Alert(
+                        severity="critical",
+                        kind="unhealthy",
+                        container=c.name or "",
+                        container_id=c.short_id,
+                        message=f"{c.name} est marqué unhealthy par son healthcheck.",
+                        metric={"health": health, "restart_count": restart_count},
+                    )
+                )
+
+            if c.status == "restarting" or restart_count >= restart_th:
                 flapping.append(base)
-            if c.status == "exited" and state.get("ExitCode", 0) not in (0, None):
-                crashed.append({**base, "exit_code": state.get("ExitCode")})
+                alerts.append(
+                    Alert(
+                        severity="warning",
+                        kind="flapping",
+                        container=c.name or "",
+                        container_id=c.short_id,
+                        message=(
+                            f"{c.name} flappe : restart_count={restart_count} (seuil={restart_th})."
+                        ),
+                        metric={"restart_count": restart_count, "threshold": restart_th},
+                    )
+                )
+
+            if oom_killed:
+                alerts.append(
+                    Alert(
+                        severity="critical",
+                        kind="oom",
+                        container=c.name or "",
+                        container_id=c.short_id,
+                        message=f"{c.name} a été OOMKilled.",
+                        metric={"exit_code": exit_code, "restart_count": restart_count},
+                    )
+                )
+
+            if c.status == "exited" and exit_code not in (0, None):
+                crashed.append({**base, "exit_code": exit_code})
+                alerts.append(
+                    Alert(
+                        severity="critical",
+                        kind="crashed",
+                        container=c.name or "",
+                        container_id=c.short_id,
+                        message=f"{c.name} s'est arrêté avec exit_code={exit_code}.",
+                        metric={"exit_code": exit_code, "restart_count": restart_count},
+                    )
+                )
+
             if c.status == "running":
                 sample = None
                 with contextlib.suppress(Exception):
                     sample = await _container_stats(c)
                 if sample is None:
                     continue
-                if sample["cpu_pct"] >= settings.cpu_warn_pct:
+                if sample["cpu_pct"] >= cpu_th:
                     high_cpu.append(sample)
-                if sample["mem_pct"] >= settings.mem_warn_pct:
+                    alerts.append(
+                        Alert(
+                            severity="warning",
+                            kind="high_cpu",
+                            container=c.name or "",
+                            container_id=c.short_id,
+                            message=(
+                                f"{c.name} consomme {sample['cpu_pct']}% CPU (seuil={cpu_th}%)."
+                            ),
+                            metric={"cpu_pct": sample["cpu_pct"], "threshold": cpu_th},
+                        )
+                    )
+                if sample["mem_pct"] >= mem_th:
                     high_mem.append(sample)
+                    alerts.append(
+                        Alert(
+                            severity="warning",
+                            kind="high_mem",
+                            container=c.name or "",
+                            container_id=c.short_id,
+                            message=(
+                                f"{c.name} consomme {sample['mem_pct']}% mémoire "
+                                f"({sample['mem_used_mb']}/{sample['mem_limit_mb']} Mo, "
+                                f"seuil={mem_th}%)."
+                            ),
+                            metric={
+                                "mem_pct": sample["mem_pct"],
+                                "mem_used_mb": sample["mem_used_mb"],
+                                "mem_limit_mb": sample["mem_limit_mb"],
+                                "threshold": mem_th,
+                            },
+                        )
+                    )
 
-        alerts_total = sum(map(len, (unhealthy, flapping, crashed, high_cpu, high_mem)))
+        critical_count = sum(1 for a in alerts if a.severity == "critical")
+        warning_count = sum(1 for a in alerts if a.severity == "warning")
+
         return ok(
             {
                 "summary": {
                     "containers_total": len(all_c),
-                    "alerts_total": alerts_total,
+                    "alerts_total": len(alerts),
+                    "critical_count": critical_count,
+                    "warning_count": warning_count,
                     "thresholds": {
-                        "cpu_warn_pct": settings.cpu_warn_pct,
-                        "mem_warn_pct": settings.mem_warn_pct,
-                        "restart_warn_count": settings.restart_warn_count,
+                        "cpu_pct": cpu_th,
+                        "mem_pct": mem_th,
+                        "restart_count": restart_th,
                     },
                 },
+                "alerts": [a.model_dump() for a in alerts],
                 "unhealthy": unhealthy,
                 "flapping": flapping,
                 "crashed": crashed,
