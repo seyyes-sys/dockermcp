@@ -213,5 +213,51 @@ docker ps -a --filter "label=dockermcp.test=1" -q | ForEach-Object { docker rm -
 - Bind-mounts whitelistés via `DOCKERMCP_ALLOWED_BIND_ROOTS`.
 - Logs uniquement vers `stderr` (le stdout est réservé au transport MCP).
 
+## Monitoring proactif
+
+`health_report` retourne un champ **`alerts`** : liste plate d'alertes typées
+prêtes à être consommées par un orchestrateur (n8n, OpenClaw, SIEM…).
+Schéma de chaque alerte :
+
+```json
+{
+  "severity": "critical | warning",
+  "kind": "unhealthy | flapping | crashed | oom | high_cpu | high_mem",
+  "container": "api-prod",
+  "container_id": "a1b2c3d4e5f6",
+  "message": "api-prod consomme 92.4% CPU (seuil=80%).",
+  "metric": { "cpu_pct": 92.4, "threshold": 80 }
+}
+```
+
+Les seuils peuvent être surchargés à l'appel
+(`cpu_threshold`, `mem_threshold`, `restart_threshold`) ou globalement via les
+env vars `DOCKERMCP_CPU_WARN_PCT`, `DOCKERMCP_MEM_WARN_PCT`,
+`DOCKERMCP_RESTART_WARN_COUNT`. Filtre par nom : `name_filter="api-"`.
+
+### Workflow n8n type
+
+```
+[Cron: */5 * * * *]
+       │
+       ▼
+[MCP Client Tool] ── tool=health_report ──► DockerMCP (HTTP + token)
+       │
+       ▼
+[IF: $json.data.summary.alerts_total > 0]
+       │
+       ▼
+[Split In Batches] sur $json.data.alerts
+       │
+       ▼
+[Switch: $json.severity]
+   ├─ critical → [Telegram / OpenClaw webhook]
+   └─ warning  → [Slack channel]
+```
+
+Cette architecture **ne nécessite aucun streaming** : un polling toutes les
+5 minutes suffit pour 95 % des besoins SRE. Pour du temps réel sub-seconde,
+brancher un side-car sur `docker events` qui POST vers un webhook n8n.
+
 Voir [.github/copilot-instructions.md](.github/copilot-instructions.md) pour
 les conventions internes.

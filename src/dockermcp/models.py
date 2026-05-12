@@ -78,6 +78,41 @@ class HealthReportParams(BaseModel):
     include_stopped: bool = Field(
         default=True, description="Inclure les conteneurs arrêtés dans le rapport."
     )
+    cpu_threshold: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Surcharge le seuil CPU (%) — sinon `DOCKERMCP_CPU_WARN_PCT`.",
+    )
+    mem_threshold: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Surcharge le seuil mémoire (%) — sinon `DOCKERMCP_MEM_WARN_PCT`.",
+    )
+    restart_threshold: int | None = Field(
+        default=None,
+        ge=0,
+        description="Surcharge le seuil de restart_count — sinon `DOCKERMCP_RESTART_WARN_COUNT`.",
+    )
+    name_filter: str | None = Field(
+        default=None,
+        description="Filtre sous-chaîne sur le nom du conteneur.",
+    )
+
+
+class Alert(BaseModel):
+    """Alerte typée et plate, conçue pour être consommée par n8n / OpenClaw / SIEM."""
+
+    severity: Literal["warning", "critical"]
+    kind: Literal["unhealthy", "flapping", "crashed", "high_cpu", "high_mem", "oom"]
+    container: str = Field(description="Nom du conteneur concerné.")
+    container_id: str | None = None
+    message: str = Field(description="Description lisible par humain ou LLM.")
+    metric: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Mesures associées (cpu_pct, mem_pct, restart_count, exit_code…).",
+    )
 
 
 # ---------- Retours ----------
