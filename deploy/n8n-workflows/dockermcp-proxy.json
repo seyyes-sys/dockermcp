@@ -1,0 +1,135 @@
+{
+  "name": "DockerMCP Proxy (OpenClaw bridge)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dockermcp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-in",
+      "name": "Webhook (POST /dockermcp)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "dockermcp-proxy"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-tool",
+              "leftValue": "={{ $json.body.tool }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "guard-tool",
+      "name": "Has tool name?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "connectionType": "http",
+        "operation": "executeTool",
+        "toolName": "={{ $json.body.tool }}",
+        "toolParameters": "={{ JSON.stringify({ params: $json.body.params || {} }) }}"
+      },
+      "id": "mcp-call",
+      "name": "DockerMCP — executeTool",
+      "type": "n8n-nodes-mcp.mcpClient",
+      "typeVersion": 1,
+      "position": [660, 220],
+      "credentials": {
+        "mcpClientHttpApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "DockerMCP HTTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aplatit la réponse MCP en payload simple pour le client (OpenClaw)\nconst r = $input.first().json || {};\nconst data = r?.result?.structuredContent?.data;\nif (data !== undefined) {\n  return [{ json: { ok: true, tool: $('Webhook (POST /dockermcp)').first().json.body.tool, data } }];\n}\nreturn [{ json: { ok: true, tool: $('Webhook (POST /dockermcp)').first().json.body.tool, raw: r } }];"
+      },
+      "id": "flatten-ok",
+      "name": "Flatten OK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-ok",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'missing_tool', message: \"Body must contain { tool: '<name>', params?: {...} }\" }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-bad",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, 420]
+    }
+  ],
+  "connections": {
+    "Webhook (POST /dockermcp)": {
+      "main": [[{ "node": "Has tool name?", "type": "main", "index": 0 }]]
+    },
+    "Has tool name?": {
+      "main": [
+        [{ "node": "DockerMCP — executeTool", "type": "main", "index": 0 }],
+        [{ "node": "Respond 400", "type": "main", "index": 0 }]
+      ]
+    },
+    "DockerMCP — executeTool": {
+      "main": [[{ "node": "Flatten OK", "type": "main", "index": 0 }]]
+    },
+    "Flatten OK": {
+      "main": [[{ "node": "Respond 200", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": false,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Paris"
+  },
+  "pinData": {},
+  "tags": [
+    { "name": "dockermcp" },
+    { "name": "openclaw" }
+  ]
+}

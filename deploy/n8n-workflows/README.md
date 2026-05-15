@@ -40,6 +40,7 @@ Le compose active déjà `N8N_COMMUNITY_PACKAGES_ENABLED=true`. Reste à install
 | Fichier | Trigger | Description |
 |---|---|---|
 | [`docker-health-monitor.json`](docker-health-monitor.json) | Cron 5 min | Appelle `health_report` → si `critical_count > 0`, envoie un message Telegram formaté en Markdown |
+| [`dockermcp-proxy.json`](dockermcp-proxy.json) | Webhook `POST /webhook/dockermcp` | Proxy générique : reçoit `{tool, params}`, exécute via le node MCP Client, renvoie `{ok, tool, data}`. Consommé par le **skill OpenClaw `dockermcp`** (cf. [`../openclaw/skills/dockermcp/SKILL.md`](../openclaw/skills/dockermcp/SKILL.md)). |
 
 ## Import d'un workflow
 

@@ -86,7 +86,7 @@ services:
       # Whitelist de bind-mount (vide = aucun mount autorisé via MCP)
       DOCKERMCP_ALLOWED_BIND_ROOTS: ${DOCKERMCP_ALLOWED_BIND_ROOTS:-}
       # Protection anti DNS-rebinding du SDK MCP : autoriser les Host attendus
-      DOCKERMCP_ALLOWED_HOSTS: ${DOCKERMCP_ALLOWED_HOSTS:-dockermcp.hexotik.ovh,dockermcp,localhost,127.0.0.1}
+      DOCKERMCP_ALLOWED_HOSTS: ${DOCKERMCP_ALLOWED_HOSTS:-dockermcp.hexotik.ovh,dockermcp,dockermcp:8765,localhost,127.0.0.1}
       DOCKERMCP_ALLOWED_ORIGINS: ${DOCKERMCP_ALLOWED_ORIGINS:-https://dockermcp.hexotik.ovh,https://n8n-it.hexotik.ovh}
     volumes:
       - dockermcp_audit:/var/log/dockermcp
@@ -148,8 +148,13 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DOCKERMCP_URL: http://dockermcp:8765
       DOCKERMCP_TOKEN: ${OPENCLAW_DOCKERMCP_TOKEN}
+      # URL du proxy n8n consommé par le skill OpenClaw "dockermcp".
+      # Le skill instruit Claude à exec `curl -X POST $DOCKERMCP_PROXY_URL ...`.
+      DOCKERMCP_PROXY_URL: ${DOCKERMCP_PROXY_URL:-http://dockermcp-n8n:5678/webhook/dockermcp}
     volumes:
       - openclaw_itops_data:/home/node/.openclaw
+      # Skills custom (montés par-dessus le volume nommé)
+      - ./openclaw/skills:/home/node/.openclaw/skills:ro
     command:
       - node
       - dist/index.js
