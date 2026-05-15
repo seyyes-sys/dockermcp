@@ -26,7 +26,7 @@
       },
       "id": "mcp-health-report",
       "name": "DockerMCP — health_report",
-      "type": "n8n-nodes-mcp.mcpClientTool",
+      "type": "n8n-nodes-mcp.mcpClient",
       "typeVersion": 1,
       "position": [440, 300],
       "credentials": {
