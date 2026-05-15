@@ -21,11 +21,8 @@ Stack isolée (Option B) à déployer **à côté** d'`ai2cook` sur le serveur H
 ## Procédure de déploiement
 
 ```bash
-# 1) Sur ta machine : pousser le code (déjà sur GitHub)
-git push origin main
-
-# 2) Sur le serveur, première fois :
-ssh user@51.38.209.215
+# 1) Sur le serveur, première fois :
+ssh <user>@<serveur>
 git clone https://github.com/seyyes-sys/dockermcp.git
 cd dockermcp/deploy
 cp .env.example .env
@@ -35,23 +32,23 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 nano .env
 chmod 600 .env
 
-# 3) Vérifier que le réseau Caddy existe
+# 2) Vérifier que le réseau Caddy existe
 docker network ls | grep compose_airsoft-network
 
-# 4) Build + démarrage (sans OpenClaw au début)
+# 3) Build + démarrage (sans OpenClaw au début)
 docker compose up -d --build
 
-# 5) Vérifier
+# 4) Vérifier
 docker compose ps
 docker compose logs -f dockermcp
 # Le serveur MCP n'expose pas de /health REST — utilise le healthcheck Docker :
 docker inspect --format '{{.State.Health.Status}}' dockermcp
 
-# 6) Ajouter le snippet Caddy
+# 5) Ajouter le snippet Caddy
 cat caddy-snippet.txt >> /chemin/vers/Caddyfile
 docker exec <caddy_container> caddy reload --config /etc/caddy/Caddyfile
 
-# 7) Activer OpenClaw IT-Ops plus tard (quand bot Telegram créé) :
+# 6) Activer OpenClaw IT-Ops plus tard (quand bot Telegram créé) :
 docker compose --profile openclaw up -d
 ```
 
