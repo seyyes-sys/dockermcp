@@ -53,6 +53,12 @@ docker exec <caddy_container> caddy reload --config /etc/caddy/Caddyfile
 docker compose --profile openclaw up -d
 ```
 
+## Workflows n8n d'exemple
+
+Voir [`n8n-workflows/`](n8n-workflows/) — inclut un monitoring Docker complet
+(cron 5 min → `health_report` MCP → Telegram si alerte critique) prêt à
+importer dans `dockermcp-n8n`.
+
 ## Mises à jour
 
 ```bash
