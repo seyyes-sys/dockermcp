@@ -1,0 +1,195 @@
+# ============================================================
+# DockerMCP Suite — stack isolée (Option B)
+#
+# Domaines :
+#   - dockermcp.hexotik.ovh  → API MCP (HTTP + token bearer)
+#   - n8n-it.hexotik.ovh     → n8n IT-Ops (orchestration / alertes)
+#
+# Architecture :
+#   docker-socket-proxy  ──(internal-only)──┐
+#                                            ▼
+#                                       dockermcp ──► (caddy_network) ► Caddy
+#                                       n8n-itops ──► (caddy_network) ► Caddy
+#                                       openclaw-itops (profile=openclaw)
+# ============================================================
+
+services:
+  # ─── Socket Proxy (Tecnativa) ──────────────────────────────
+  # Filtre les endpoints Docker accessibles à DockerMCP.
+  # Refuse /build, /system/auth, et toute manipulation de swarm.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: dockermcp-socket-proxy
+    restart: unless-stopped
+    environment:
+      # Lecture
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1
+      VERSION: 1
+      EVENTS: 1
+      PING: 1
+      # Écriture (start/stop/remove/exec/pull)
+      POST: 1
+      EXEC: 1
+      # Désactivé explicitement (sécurité)
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SWARM: 0
+      NODES: 0
+      TASKS: 0
+      PLUGINS: 0
+      SESSION: 0
+      AUTH: 0
+      DISTRIBUTION: 0
+      SYSTEM: 0   # désactive /system/auth, /system/df reste via INFO=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker_api
+    labels:
+      - "com.centurylinklabs.watchtower.scope=dockermcp-suite"
+
+  # ─── DockerMCP ─────────────────────────────────────────────
+  dockermcp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: dockermcp:local
+    container_name: dockermcp
+    restart: unless-stopped
+    depends_on:
+      - docker-socket-proxy
+    environment:
+      # Passe par le socket-proxy (jamais le socket brut)
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      # Transport HTTP + auth
+      DOCKERMCP_TRANSPORT: http
+      DOCKERMCP_HTTP_HOST: 0.0.0.0
+      DOCKERMCP_HTTP_PORT: 8765
+      DOCKERMCP_TOKENS: ${DOCKERMCP_TOKENS}
+      DOCKERMCP_READ_ONLY: ${DOCKERMCP_READ_ONLY:-false}
+      DOCKERMCP_LOG_LEVEL: ${DOCKERMCP_LOG_LEVEL:-INFO}
+      # Audit fichier (rotation : 10 Mo × 7 backups)
+      DOCKERMCP_AUDIT_FILE: /var/log/dockermcp/audit.log
+      DOCKERMCP_AUDIT_MAX_BYTES: "10485760"
+      DOCKERMCP_AUDIT_BACKUPS: "7"
+      # Whitelist de bind-mount (vide = aucun mount autorisé via MCP)
+      DOCKERMCP_ALLOWED_BIND_ROOTS: ${DOCKERMCP_ALLOWED_BIND_ROOTS:-}
+    volumes:
+      - dockermcp_audit:/var/log/dockermcp
+    networks:
+      - docker_api
+      - suite
+      - caddy_network
+    labels:
+      - "com.centurylinklabs.watchtower.scope=dockermcp-suite"
+
+  # ─── n8n IT-Ops ────────────────────────────────────────────
+  n8n-itops:
+    image: n8nio/n8n:latest
+    container_name: dockermcp-n8n
+    restart: unless-stopped
+    expose:
+      - "5678"
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      N8N_HOST: n8n-it.hexotik.ovh
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://n8n-it.hexotik.ovh/
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      GENERIC_TIMEZONE: Europe/Paris
+      TZ: Europe/Paris
+      # Variables consommées par les workflows (alertes, MCP token, etc.)
+      DOCKERMCP_URL: http://dockermcp:8765
+      DOCKERMCP_TOKEN: ${N8N_DOCKERMCP_TOKEN}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_ITOPS_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_ITOPS_CHAT_ID:-}
+    volumes:
+      - n8n_itops_data:/home/node/.n8n
+    networks:
+      - suite
+      - caddy_network
+    labels:
+      - "com.centurylinklabs.watchtower.scope=dockermcp-suite"
+
+  # ─── OpenClaw IT-Ops (profile optionnel) ───────────────────
+  # Requiert l'image openclaw:local déjà construite sur le serveur
+  # (réutilisée depuis ai2cook). Active avec :
+  #     docker compose --profile openclaw up -d
+  openclaw-itops:
+    image: openclaw:local
+    container_name: dockermcp-openclaw
+    restart: unless-stopped
+    init: true
+    profiles:
+      - openclaw
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_ITOPS_BOT_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DOCKERMCP_URL: http://dockermcp:8765
+      DOCKERMCP_TOKEN: ${OPENCLAW_DOCKERMCP_TOKEN}
+    volumes:
+      - openclaw_itops_data:/home/node/.openclaw
+    command:
+      - node
+      - dist/index.js
+      - gateway
+      - --allow-unconfigured
+      - --bind
+      - lan
+    networks:
+      - suite
+    labels:
+      - "com.centurylinklabs.watchtower.scope=dockermcp-suite"
+
+  # ─── Watchtower (scope dockermcp-suite uniquement) ─────────
+  watchtower:
+    image: containrrr/watchtower
+    container_name: dockermcp-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: "0 0 4 * * *"
+      WATCHTOWER_SCOPE: dockermcp-suite
+    labels:
+      - "com.centurylinklabs.watchtower.scope=dockermcp-suite"
+    networks:
+      - suite
+
+volumes:
+  dockermcp_audit:
+    name: dockermcp-audit
+  n8n_itops_data:
+    name: dockermcp-n8n-data
+  openclaw_itops_data:
+    name: dockermcp-openclaw-data
+
+networks:
+  # Réseau interne strict pour parler au socket-proxy.
+  # `internal: true` = pas d'accès Internet sortant depuis ce réseau.
+  docker_api:
+    name: dockermcp_docker_api
+    driver: bridge
+    internal: true
+
+  # Réseau interne du stack (dockermcp ↔ n8n ↔ openclaw)
+  suite:
+    name: dockermcp_suite
+    driver: bridge
+
+  # Réseau Caddy existant (partagé avec les autres stacks du serveur)
+  caddy_network:
+    external: true
+    name: compose_airsoft-network
