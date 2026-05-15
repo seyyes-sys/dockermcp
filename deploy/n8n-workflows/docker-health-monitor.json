@@ -20,9 +20,10 @@
     },
     {
       "parameters": {
+        "connectionType": "http",
         "operation": "executeTool",
         "toolName": "health_report",
-        "toolParameters": "={\n  \"cpu_threshold\": 80,\n  \"mem_threshold\": 85,\n  \"restart_threshold\": 3\n}"
+        "toolParameters": "={\n  \"params\": {\n    \"cpu_threshold\": 80,\n    \"mem_threshold\": 85,\n    \"restart_threshold\": 3\n  }\n}"
       },
       "id": "mcp-health-report",
       "name": "DockerMCP — health_report",
@@ -30,7 +31,7 @@
       "typeVersion": 1,
       "position": [440, 300],
       "credentials": {
-        "mcpClientApi": {
+        "mcpClientHttpApi": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
           "name": "DockerMCP HTTP"
         }
@@ -48,7 +49,7 @@
           "conditions": [
             {
               "id": "critical-positive",
-              "leftValue": "={{ $json.summary.critical_count }}",
+              "leftValue": "={{ $json.result.structuredContent.data.summary.critical_count }}",
               "rightValue": 0,
               "operator": {
                 "type": "number",
@@ -68,7 +69,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconst alerts = data.alerts || [];\nconst critical = alerts.filter(a => a.severity === 'critical');\nconst lines = critical.map(a => `• [${a.kind}] *${a.container}* — ${a.message}`);\nconst header = `🚨 *DockerMCP — ${critical.length} alerte(s) critique(s)*`;\nconst summary = `Total: ${data.summary.alerts_total} | Critical: ${data.summary.critical_count} | Warning: ${data.summary.warning_count}`;\nreturn [{ json: { text: `${header}\\n${summary}\\n\\n${lines.join('\\n')}` } }];"
+        "jsCode": "const data = $input.first().json.result.structuredContent.data;\nconst alerts = data.alerts || [];\nconst critical = alerts.filter(a => a.severity === 'critical');\nconst lines = critical.map(a => `• [${a.kind}] *${a.container}* — ${a.message}`);\nconst header = `🚨 *DockerMCP — ${critical.length} alerte(s) critique(s)*`;\nconst summary = `Total: ${data.summary.alerts_total} | Critical: ${data.summary.critical_count} | Warning: ${data.summary.warning_count}`;\nreturn [{ json: { text: `${header}\\n${summary}\\n\\n${lines.join('\\n')}` } }];"
       },
       "id": "format-message",
       "name": "Format Telegram message",
