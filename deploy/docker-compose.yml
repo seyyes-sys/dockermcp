@@ -148,8 +148,13 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DOCKERMCP_URL: http://dockermcp:8765
       DOCKERMCP_TOKEN: ${OPENCLAW_DOCKERMCP_TOKEN}
+      # URL du proxy n8n consommé par le skill OpenClaw "dockermcp".
+      # Le skill instruit Claude à exec `curl -X POST $DOCKERMCP_PROXY_URL ...`.
+      DOCKERMCP_PROXY_URL: ${DOCKERMCP_PROXY_URL:-http://dockermcp-n8n:5678/webhook/dockermcp}
     volumes:
       - openclaw_itops_data:/home/node/.openclaw
+      # Skills custom (montés par-dessus le volume nommé)
+      - ./openclaw/skills:/home/node/.openclaw/skills:ro
     command:
       - node
       - dist/index.js
