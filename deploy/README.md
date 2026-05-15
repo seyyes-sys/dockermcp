@@ -7,7 +7,7 @@ Stack isolée (Option B) à déployer **à côté** d'`ai2cook` sur le serveur H
 | Service | Image | Port interne | Exposition |
 |---|---|---|---|
 | `docker-socket-proxy` | `tecnativa/docker-socket-proxy` | 2375 | Réseau `docker_api` (internal) |
-| `dockermcp` | `dockermcp:local` (build local) | 8765 | `dockermcp.hexotik.ovh` via Caddy |
+| `dockermcp` | `ghcr.io/seyyes-sys/dockermcp:latest` | 8765 | `dockermcp.hexotik.ovh` via Caddy |
 | `n8n-itops` | `n8nio/n8n:latest` | 5678 | `n8n-it.hexotik.ovh` via Caddy |
 | `openclaw-itops` | `openclaw:local` (profile) | — | Bot Telegram IT-Ops dédié |
 | `watchtower` | `containrrr/watchtower` | — | Scope `dockermcp-suite` |
@@ -35,8 +35,9 @@ chmod 600 .env
 # 2) Vérifier que le réseau Caddy existe
 docker network ls | grep compose_airsoft-network
 
-# 3) Build + démarrage (sans OpenClaw au début)
-docker compose up -d --build
+# 3) Pull + démarrage (sans OpenClaw au début)
+docker compose pull
+docker compose up -d
 
 # 4) Vérifier
 docker compose ps
@@ -55,14 +56,39 @@ docker compose --profile openclaw up -d
 ## Mises à jour
 
 ```bash
-cd ~/dockermcp
-git pull
-cd deploy
-docker compose build dockermcp
+cd ~/dockermcp/deploy
+docker compose pull dockermcp
 docker compose up -d dockermcp
 ```
 
+Pour épingler une version précise, éditer `.env` :
+```
+DOCKERMCP_IMAGE_TAG=v0.1.0
+```
+
 Watchtower met à jour automatiquement `n8n` et `socket-proxy` chaque nuit à 04:00 (scope `dockermcp-suite` — n'affecte pas `ai2cook`).
+
+## Image Docker (GHCR)
+
+L'image `ghcr.io/seyyes-sys/dockermcp` est build/push automatiquement par
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) :
+
+| Trigger | Tags produits |
+|---|---|
+| Push sur `main` | `latest`, `main`, `sha-<short>` |
+| Tag `v1.2.3` | `1.2.3`, `1.2`, `latest`, `sha-<short>` |
+| Manuel (`workflow_dispatch`) | idem branche/tag courant |
+
+Architectures : `linux/amd64` + `linux/arm64`.
+
+### Visibilité du package
+
+Par défaut le package GHCR est **privé**. Deux options :
+
+1. **Rendre public** (recommandé pour un projet open-source) :
+   `https://github.com/users/seyyes-sys/packages/container/dockermcp/settings` → *Change visibility* → Public.
+2. **Garder privé** : sur le serveur, `docker login ghcr.io` avec un PAT
+   classique scope `read:packages`, puis stocker dans `~/.docker/config.json`.
 
 ## Vérifications post-déploiement
 
