@@ -57,10 +57,14 @@ services:
 
   # ─── DockerMCP ─────────────────────────────────────────────
   dockermcp:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    image: dockermcp:local
+    # Image publiée par GitHub Actions (.github/workflows/release.yml)
+    # Override via DOCKERMCP_IMAGE_TAG (ex: v0.1.0, sha-abc1234)
+    image: ghcr.io/seyyes-sys/dockermcp:${DOCKERMCP_IMAGE_TAG:-latest}
+    # Pour builder localement (dev), commente la ligne `image:` ci-dessus
+    # et décommente le bloc `build:` :
+    # build:
+    #   context: ..
+    #   dockerfile: deploy/Dockerfile
     container_name: dockermcp
     restart: unless-stopped
     depends_on:
