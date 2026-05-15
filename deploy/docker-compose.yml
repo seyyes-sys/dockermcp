@@ -111,8 +111,11 @@ services:
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       GENERIC_TIMEZONE: Europe/Paris
       TZ: Europe/Paris
+      # Community nodes (requis pour n8n-nodes-mcp)
+      N8N_COMMUNITY_PACKAGES_ENABLED: "true"
+      N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE: "true"
       # Variables consommées par les workflows (alertes, MCP token, etc.)
-      DOCKERMCP_URL: http://dockermcp:8765
+      DOCKERMCP_URL: http://dockermcp:8765/mcp
       DOCKERMCP_TOKEN: ${N8N_DOCKERMCP_TOKEN}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_ITOPS_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_ITOPS_CHAT_ID:-}
