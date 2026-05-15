@@ -1,0 +1,66 @@
+# ============================================================
+# DockerMCP Suite — à ajouter au Caddyfile existant
+# ============================================================
+
+# --- DockerMCP API (HTTP + bearer token) --------------------
+dockermcp.hexotik.ovh {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+
+    # MCP en HTTP streamable : passe-plat simple
+    reverse_proxy dockermcp:8765 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+        # SSE / streaming : pas de buffering
+        flush_interval -1
+    }
+
+    # Sécurité : restreindre aux IPs autorisées (décommenter et adapter)
+    # @blocked not remote_ip 1.2.3.4/32 5.6.7.8/24
+    # respond @blocked 403
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+
+    log {
+        output file /var/log/caddy/dockermcp.log
+        level INFO
+    }
+}
+
+# --- n8n IT-Ops ---------------------------------------------
+n8n-it.hexotik.ovh {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+
+    reverse_proxy dockermcp-n8n:5678 {
+        # WebSocket (éditeur n8n)
+        header_up Connection {>Connection}
+        header_up Upgrade {>Upgrade}
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+        flush_interval -1
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+    }
+
+    log {
+        output file /var/log/caddy/n8n-it.log
+        level INFO
+    }
+}

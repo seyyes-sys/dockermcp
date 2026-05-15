@@ -1,0 +1,15 @@
+.git/
+.github/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.local/
+tests/
+**/__pycache__/
+*.pyc
+*.pyo
+.vscode/
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
