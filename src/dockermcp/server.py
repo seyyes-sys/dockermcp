@@ -25,6 +25,35 @@ logger = logging.getLogger(__name__)
 Transport = Literal["stdio", "sse", "streamable-http"]
 
 
+def _transport_security() -> Any:
+    """Construit ``TransportSecuritySettings`` depuis l'environnement.
+
+    Variables :
+      - ``DOCKERMCP_ALLOWED_HOSTS`` : CSV de Host autorisés (ex:
+        ``dockermcp.hexotik.ovh,dockermcp.local``). En sus de localhost.
+      - ``DOCKERMCP_ALLOWED_ORIGINS`` : CSV d'Origin autorisés (CORS).
+      - ``DOCKERMCP_DISABLE_DNS_REBIND`` : ``true`` pour désactiver complètement
+        la protection (déconseillé sauf reverse-proxy strict).
+
+    Retourne ``None`` si rien n'est configuré (défaut SDK).
+    """
+    hosts = [h.strip() for h in os.getenv("DOCKERMCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    origins = [
+        o.strip() for o in os.getenv("DOCKERMCP_ALLOWED_ORIGINS", "").split(",") if o.strip()
+    ]
+    disable = os.getenv("DOCKERMCP_DISABLE_DNS_REBIND", "").lower() in ("1", "true", "yes")
+    if not hosts and not origins and not disable:
+        return None
+
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=not disable,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
 def build_server() -> FastMCP:
     """Crée le serveur FastMCP avec tous les outils enregistrés."""
     mcp = FastMCP(
@@ -34,6 +63,7 @@ def build_server() -> FastMCP:
             "Accès soumis à RBAC : viewer (lecture), operator (actions), "
             "admin (destructives). Les opérations destructives exigent confirm=True."
         ),
+        transport_security=_transport_security(),
     )
     for module in (containers, images, volumes, networks, system, monitoring, compose):
         module.register(mcp)
