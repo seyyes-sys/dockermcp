@@ -85,11 +85,19 @@ services:
       DOCKERMCP_AUDIT_BACKUPS: "7"
       # Whitelist de bind-mount (vide = aucun mount autorisé via MCP)
       DOCKERMCP_ALLOWED_BIND_ROOTS: ${DOCKERMCP_ALLOWED_BIND_ROOTS:-}
+      # Whitelist des racines contenant des fichiers docker-compose.yml
+      # exploitables par les tools compose_*. Les chemins doivent être
+      # accessibles à l'intérieur du conteneur (cf. bind-mounts ci-dessous).
+      DOCKERMCP_ALLOWED_COMPOSE_ROOTS: ${DOCKERMCP_ALLOWED_COMPOSE_ROOTS:-/data/compose}
       # Protection anti DNS-rebinding du SDK MCP : autoriser les Host attendus
       DOCKERMCP_ALLOWED_HOSTS: ${DOCKERMCP_ALLOWED_HOSTS:-dockermcp.hexotik.ovh,dockermcp,dockermcp:8765,localhost,127.0.0.1}
       DOCKERMCP_ALLOWED_ORIGINS: ${DOCKERMCP_ALLOWED_ORIGINS:-https://dockermcp.hexotik.ovh,https://n8n-it.hexotik.ovh}
     volumes:
       - dockermcp_audit:/var/log/dockermcp
+      # Bind-mount lecture seule des stacks Portainer pour permettre
+      # compose_ps / compose_pull / compose_up / compose_down etc.
+      # Override via DOCKERMCP_COMPOSE_HOST_PATH (chemin hôte).
+      - ${DOCKERMCP_COMPOSE_HOST_PATH:-/data/compose}:/data/compose:ro
     networks:
       - docker_api
       - suite
